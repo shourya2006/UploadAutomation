@@ -96,13 +96,13 @@ def ensure_vertical_video(video_path: str, progress_callback=None) -> str:
         return video_path
 
 def generate_thumbnail_hf(prompt: str, video_path: str, progress_callback=None) -> str:
-    """Uses Google Gemini to generate a YouTube thumbnail. Falls back to frame extraction."""
+    """Uses Gemini 2.0 Flash (free tier) to generate a YouTube thumbnail. Falls back to frame extraction."""
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         log_progress(progress_callback, "log", message="No GEMINI_API_KEY found. Falling back to frame extraction.")
         return extract_thumbnail(video_path, progress_callback)
 
-    log_progress(progress_callback, "log", message="Generating AI thumbnail with Google Gemini Imagen...")
+    log_progress(progress_callback, "log", message="Generating AI thumbnail with Gemini 2.0 Flash (free)...")
     try:
         from google import genai
         from google.genai import types
@@ -114,31 +114,34 @@ def generate_thumbnail_hf(prompt: str, video_path: str, progress_callback=None) 
             "Vibrant colors, cinematic lighting, high contrast, photorealistic. No text overlays."
         )
 
-        response = client.models.generate_images(
-            model="imagen-3.0-generate-002",
-            prompt=image_prompt,
-            config=types.GenerateImagesConfig(
-                number_of_images=1,
-                aspect_ratio="16:9",
-                safety_filter_level="BLOCK_ONLY_HIGH",
-                person_generation="ALLOW_ADULT",
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-preview-image-generation",
+            contents=image_prompt,
+            config=types.GenerateContentConfig(
+                response_modalities=["IMAGE", "TEXT"],
             ),
         )
 
-        if not response.generated_images:
-            raise Exception("No images returned from Gemini Imagen.")
+        # Extract image bytes from response
+        image_bytes = None
+        for part in response.candidates[0].content.parts:
+            if part.inline_data and part.inline_data.mime_type.startswith("image/"):
+                image_bytes = part.inline_data.data
+                break
+
+        if not image_bytes:
+            raise Exception("No image returned from Gemini 2.0 Flash.")
 
         thumb_path = video_path.rsplit(".", 1)[0] + "_thumbnail.jpg"
-        image_bytes = response.generated_images[0].image.image_bytes
         with open(thumb_path, "wb") as f:
             f.write(image_bytes)
 
-        log_progress(progress_callback, "log", message="✅ AI Thumbnail generated with Google Gemini Imagen!")
+        log_progress(progress_callback, "log", message="✅ AI Thumbnail generated with Gemini 2.0 Flash!")
         log_progress(progress_callback, "thumbnail", path=f"/static/uploads/{os.path.basename(thumb_path)}")
         return thumb_path
 
     except Exception as e:
-        log_progress(progress_callback, "log", message=f"Gemini Imagen error: {e}. Falling back to frame extraction.")
+        log_progress(progress_callback, "log", message=f"Gemini thumbnail error: {e}. Falling back to frame extraction.")
         return extract_thumbnail(video_path, progress_callback)
 
 def optimize_metadata(brief_description: str, progress_callback=None) -> dict:
