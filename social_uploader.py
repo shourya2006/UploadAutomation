@@ -96,9 +96,50 @@ def ensure_vertical_video(video_path: str, progress_callback=None) -> str:
         return video_path
 
 def generate_thumbnail_hf(prompt: str, video_path: str, progress_callback=None) -> str:
-    """Extracts a clean frame from the video as the thumbnail (best quality for production)."""
-    log_progress(progress_callback, "log", message="Extracting thumbnail from video frame...")
-    return extract_thumbnail(video_path, progress_callback)
+    """Uses Google Gemini to generate a YouTube thumbnail. Falls back to frame extraction."""
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        log_progress(progress_callback, "log", message="No GEMINI_API_KEY found. Falling back to frame extraction.")
+        return extract_thumbnail(video_path, progress_callback)
+
+    log_progress(progress_callback, "log", message="Generating AI thumbnail with Google Gemini Imagen...")
+    try:
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=api_key)
+        image_prompt = (
+            f"A highly engaging, professional YouTube thumbnail for a video about: {prompt}. "
+            "16:9 landscape aspect ratio, edge to edge, no letterboxing, no black bars, no borders. "
+            "Vibrant colors, cinematic lighting, high contrast, photorealistic. No text overlays."
+        )
+
+        response = client.models.generate_images(
+            model="imagen-3.0-generate-002",
+            prompt=image_prompt,
+            config=types.GenerateImagesConfig(
+                number_of_images=1,
+                aspect_ratio="16:9",
+                safety_filter_level="BLOCK_ONLY_HIGH",
+                person_generation="ALLOW_ADULT",
+            ),
+        )
+
+        if not response.generated_images:
+            raise Exception("No images returned from Gemini Imagen.")
+
+        thumb_path = video_path.rsplit(".", 1)[0] + "_thumbnail.jpg"
+        image_bytes = response.generated_images[0].image.image_bytes
+        with open(thumb_path, "wb") as f:
+            f.write(image_bytes)
+
+        log_progress(progress_callback, "log", message="✅ AI Thumbnail generated with Google Gemini Imagen!")
+        log_progress(progress_callback, "thumbnail", path=f"/static/uploads/{os.path.basename(thumb_path)}")
+        return thumb_path
+
+    except Exception as e:
+        log_progress(progress_callback, "log", message=f"Gemini Imagen error: {e}. Falling back to frame extraction.")
+        return extract_thumbnail(video_path, progress_callback)
 
 def optimize_metadata(brief_description: str, progress_callback=None) -> dict:
     """Uses Groq to generate SEO metadata."""
