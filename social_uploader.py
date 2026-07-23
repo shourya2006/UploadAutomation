@@ -75,20 +75,14 @@ def ensure_vertical_video(video_path: str, progress_callback=None) -> str:
         # Generate new filename
         out_path = video_path.rsplit(".", 1)[0] + "_vertical.mp4"
         
-        # Complex filter string for blurred background:
-        # 1. Scale background to 1080x1920 (crop to fill) and blur heavily
-        # 2. Scale foreground to fit within 1080x1920 while maintaining aspect ratio
-        # 3. Overlay foreground on top of background
-        vf_string = (
-            "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=luma_radius=min(h\\,w)/20:luma_power=1:chroma_radius=min(cw\\,ch)/20:chroma_power=1[bg];"
-            "[0:v]scale=1080:1920:force_original_aspect_ratio=decrease[fg];"
-            "[bg][fg]overlay=(W-w)/2:(H-h)/2"
-        )
+        # Use a highly optimized filter for Render's limited CPU:
+        # Just scale and pad with black bars instead of the heavy boxblur.
+        vf_string = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black"
         
         ffmpeg_cmd = [
             "ffmpeg", "-y", "-i", video_path,
-            "-filter_complex", vf_string,
-            "-c:v", "libx264", "-preset", "fast", "-crf", "23", "-threads", "1",
+            "-vf", vf_string,
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28", "-threads", "1",
             "-c:a", "aac", "-b:a", "128k",
             out_path
         ]
