@@ -96,53 +96,40 @@ def ensure_vertical_video(video_path: str, progress_callback=None) -> str:
         return video_path
 
 def generate_thumbnail_hf(prompt: str, video_path: str, progress_callback=None) -> str:
-    """Uses Google's Nano Banana (gemini-3.1-flash-image) to generate a YouTube thumbnail."""
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        log_progress(progress_callback, "log", message="No GEMINI_API_KEY found. Falling back to frame extraction.")
-        return extract_thumbnail(video_path, progress_callback)
-
-    log_progress(progress_callback, "log", message="Generating AI thumbnail with Google Nano Banana...")
+    """Uses custom Cloudflare Worker API to generate a YouTube thumbnail."""
+    log_progress(progress_callback, "log", message="Generating AI thumbnail with custom API...")
     try:
-        from google import genai
-        from google.genai import types
-
-        client = genai.Client(api_key=api_key)
         image_prompt = (
             f"A highly engaging, professional YouTube thumbnail for a video about: {prompt}. "
-            "16:9 landscape aspect ratio, edge to edge, no letterboxing, no black bars, no borders. "
-            "Vibrant colors, cinematic lighting, high contrast, photorealistic. No text overlays."
+            "The image should be 16:9 aspect ratio, cinematic lighting, high contrast, photorealistic. No text overlays."
         )
-
-        response = client.models.generate_content(
-            model="gemini-3.1-flash-image",
-            contents=[image_prompt]
-        )
-
-        image_bytes = None
-        for part in response.parts:
-            if part.inline_data is not None:
-                # the new sdk returns an Image object with a save() method, or we can get bytes
-                image = part.as_image()
-                import io
-                img_byte_arr = io.BytesIO()
-                image.save(img_byte_arr, format='JPEG')
-                image_bytes = img_byte_arr.getvalue()
-                break
-                
-        if not image_bytes:
-            raise Exception("No image returned from Nano Banana.")
-
+        
+        url = "https://thumbgen.bafna-shourya2023.workers.dev/"
+        headers = {
+            "Authorization": "Bearer 1234098756",
+            "Content-Type": "application/json"
+        }
+        payload = {"prompt": image_prompt}
+        
+        response = requests.post(url, json=payload, headers=headers, timeout=90)
+        
+        if response.status_code != 200:
+            raise Exception(f"API Error: status={response.status_code}, msg={response.text}")
+            
         thumb_path = video_path.rsplit(".", 1)[0] + "_thumbnail.jpg"
         with open(thumb_path, "wb") as f:
-            f.write(image_bytes)
+            f.write(response.content)
+            
+        # Verify we got a real image (at least 5KB)
+        if os.path.getsize(thumb_path) < 5000:
+            raise Exception(f"Generated image too small ({os.path.getsize(thumb_path)} bytes), likely an error")
 
-        log_progress(progress_callback, "log", message="✅ AI Thumbnail generated with Google Nano Banana!")
+        log_progress(progress_callback, "log", message="✅ AI Thumbnail generated successfully via Cloudflare!")
         log_progress(progress_callback, "thumbnail", path=f"/static/uploads/{os.path.basename(thumb_path)}")
         return thumb_path
 
     except Exception as e:
-        log_progress(progress_callback, "log", message=f"Nano Banana error: {e}. Falling back to frame extraction.")
+        log_progress(progress_callback, "log", message=f"Custom API thumbnail error: {e}. Falling back to frame extraction.")
         return extract_thumbnail(video_path, progress_callback)
 
 def optimize_metadata(brief_description: str, progress_callback=None) -> dict:
@@ -274,19 +261,16 @@ def upload_to_youtube(video_path: str, title: str, description: str, tags: list,
         video_id = response['id']
         log_progress(progress_callback, "log", message=f"YouTube Upload Complete! Video ID: {video_id}")
         
-        # We are intentionally skipping the custom thumbnail upload for YouTube
-        # so that the user can use YouTube Studio's native AI "Get suggestions" feature.
-        log_progress(progress_callback, "log", message="Skipping custom YouTube thumbnail upload to allow use of YouTube Studio AI suggestions.")
-        # if thumbnail_path and os.path.exists(thumbnail_path):
-        #     log_progress(progress_callback, "log", message=f"Uploading custom thumbnail from {thumbnail_path}...")
-        #     try:
-        #         youtube.thumbnails().set(
-        #             videoId=video_id,
-        #             media_body=MediaFileUpload(thumbnail_path)
-        #         ).execute()
-        #         log_progress(progress_callback, "log", message="Thumbnail uploaded successfully.")
-        #     except Exception as thumb_e:
-        #         log_progress(progress_callback, "log", message=f"Thumbnail upload failed (Shorts do not support custom thumbnails): {thumb_e}")
+        if thumbnail_path and os.path.exists(thumbnail_path):
+            log_progress(progress_callback, "log", message=f"Uploading custom thumbnail from {thumbnail_path}...")
+            try:
+                youtube.thumbnails().set(
+                    videoId=video_id,
+                    media_body=MediaFileUpload(thumbnail_path)
+                ).execute()
+                log_progress(progress_callback, "log", message="Thumbnail uploaded successfully.")
+            except Exception as thumb_e:
+                log_progress(progress_callback, "log", message=f"Thumbnail upload failed: {thumb_e}")
             
         return f"https://youtu.be/{video_id}"
     except Exception as e:
