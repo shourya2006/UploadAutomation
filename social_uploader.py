@@ -6,7 +6,6 @@ import threading
 import http.server
 import socketserver
 import subprocess
-from pyngrok import ngrok, conf
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -324,18 +323,33 @@ def upload_to_instagram(video_path: str, description: str, progress_callback=Non
     video_filename = os.path.basename(video_path)
     port = 8090
     
-    log_progress(progress_callback, "log", message="Starting local server and ngrok tunnel to generate public URL for Instagram...")
-    httpd = _start_local_server(port, video_dir)
-    
+    # Determine if we are on Render or local
+    public_url_base = os.getenv("RENDER_EXTERNAL_URL")
     ngrok_tunnel = None
+    httpd = None
+    
+    if public_url_base:
+        # We are on Render, use its public URL. Files are saved in static/uploads
+        public_video_url = f"{public_url_base}/static/uploads/{video_filename}"
+        log_progress(progress_callback, "log", message=f"Using Render public URL: {public_video_url}")
+    else:
+        # We are local, fallback to ngrok
+        log_progress(progress_callback, "log", message="Starting local server and ngrok tunnel to generate public URL for Instagram...")
+        httpd = _start_local_server(port, video_dir)
+        try:
+            from pyngrok import ngrok, conf
+            pyngrok_config = conf.PyngrokConfig(ngrok_path="/opt/homebrew/bin/ngrok")
+            ngrok_tunnel = ngrok.connect(port, bind_tls=True, pyngrok_config=pyngrok_config)
+            public_video_url = f"{ngrok_tunnel.public_url}/{video_filename}"
+            log_progress(progress_callback, "log", message=f"Generated temporary ngrok URL: {public_video_url}")
+        except ImportError:
+            log_progress(progress_callback, "log", message="Error: pyngrok is not installed and RENDER_EXTERNAL_URL is missing. Skipping IG upload.")
+            if httpd:
+                httpd.shutdown()
+                httpd.server_close()
+            return
+        
     try:
-        # We must explicitly use pyngrok
-        pyngrok_config = conf.PyngrokConfig(ngrok_path="/opt/homebrew/bin/ngrok")
-        ngrok_tunnel = ngrok.connect(port, bind_tls=True, pyngrok_config=pyngrok_config)
-        public_video_url = f"{ngrok_tunnel.public_url}/{video_filename}"
-        
-        log_progress(progress_callback, "log", message=f"Generated temporary public URL: {public_video_url}")
-        
         # Step 1: Create media container
         url_create = f"https://graph.facebook.com/v19.0/{ig_account_id}/media"
         payload_create = {
@@ -401,12 +415,18 @@ def upload_to_instagram(video_path: str, description: str, progress_callback=Non
         log_progress(progress_callback, "log", message=f"Instagram Upload Error: {e}")
     finally:
         # Cleanup
-        log_progress(progress_callback, "log", message="Shutting down ngrok tunnel and local server...")
-        if ngrok_tunnel:
-            ngrok.disconnect(ngrok_tunnel.public_url)
-            ngrok.kill()
-        httpd.shutdown()
-        httpd.server_close()
+        if not public_url_base:
+            log_progress(progress_callback, "log", message="Shutting down ngrok tunnel and local server...")
+            if ngrok_tunnel:
+                try:
+                    from pyngrok import ngrok
+                    ngrok.disconnect(ngrok_tunnel.public_url)
+                    ngrok.kill()
+                except Exception:
+                    pass
+            if httpd:
+                httpd.shutdown()
+                httpd.server_close()
 
 def publish_all(video_path: str, brief_description: str, thumbnail_path: str=None, progress_callback=None):
     log_progress(progress_callback, "log", message="--- Pre-processing Video ---")
