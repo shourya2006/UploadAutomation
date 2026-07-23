@@ -88,7 +88,7 @@ def ensure_vertical_video(video_path: str, progress_callback=None) -> str:
         ffmpeg_cmd = [
             "ffmpeg", "-y", "-i", video_path,
             "-filter_complex", vf_string,
-            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "23", "-threads", "1",
             "-c:a", "aac", "-b:a", "128k",
             out_path
         ]
@@ -226,9 +226,9 @@ def upload_to_youtube(video_path: str, title: str, description: str, tags: list,
             }
         }
         
-        # Upload
-        log_progress(progress_callback, "log", message=f"Uploading {video_path} to YouTube...")
-        media = MediaFileUpload(video_path, chunksize=-1, resumable=True)
+        # Upload in 1MB chunks to save memory
+        log_progress(progress_callback, "log", message=f"Uploading {video_path} to YouTube (chunked streaming)...")
+        media = MediaFileUpload(video_path, chunksize=1024*1024, resumable=True)
         request = youtube.videos().insert(
             part=",".join(body.keys()),
             body=body,
