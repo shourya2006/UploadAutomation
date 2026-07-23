@@ -96,44 +96,9 @@ def ensure_vertical_video(video_path: str, progress_callback=None) -> str:
         return video_path
 
 def generate_thumbnail_hf(prompt: str, video_path: str, progress_callback=None) -> str:
-    """Uses Pollinations.ai POST API to generate a YouTube thumbnail."""
-    log_progress(progress_callback, "log", message="Generating AI Thumbnail with Pollinations.ai...")
-    
-    try:
-        payload = {
-            "prompt": f"Highly engaging clickbait YouTube thumbnail, no text, topic: {prompt}. Cinematic, 4k, vibrant colors, high contrast.",
-            "width": 1280,
-            "height": 720,
-            "model": "flux",
-            "nologo": True,
-            "seed": 42
-        }
-        
-        response = requests.post(
-            "https://image.pollinations.ai/",
-            json=payload,
-            timeout=90
-        )
-        
-        if response.status_code != 200 or 'image' not in response.headers.get('content-type', ''):
-            raise Exception(f"Pollinations API Error: status={response.status_code}, content-type={response.headers.get('content-type')}")
-            
-        thumb_path = video_path.rsplit(".", 1)[0] + "_thumbnail.jpg"
-        with open(thumb_path, 'wb') as f:
-            f.write(response.content)
-        
-        # Verify we got a real image (at least 5KB)
-        if os.path.getsize(thumb_path) < 5000:
-            raise Exception(f"Generated image too small ({os.path.getsize(thumb_path)} bytes), likely an error page")
-            
-        log_progress(progress_callback, "log", message="AI Thumbnail generated successfully!")
-        log_progress(progress_callback, "thumbnail", path=f"/static/uploads/{os.path.basename(thumb_path)}")
-        return thumb_path
-        
-    except Exception as e:
-        log_progress(progress_callback, "log", message=f"AI Thumbnail Generation Error: {e}")
-        log_progress(progress_callback, "log", message="Falling back to video frame extraction.")
-        return extract_thumbnail(video_path, progress_callback)
+    """Extracts a clean frame from the video as the thumbnail (best quality for production)."""
+    log_progress(progress_callback, "log", message="Extracting thumbnail from video frame...")
+    return extract_thumbnail(video_path, progress_callback)
 
 def optimize_metadata(brief_description: str, progress_callback=None) -> dict:
     """Uses Groq to generate SEO metadata."""
@@ -188,22 +153,36 @@ def upload_to_youtube(video_path: str, title: str, description: str, tags: list,
         return None
         
     try:
+        import base64
         from google.oauth2.credentials import Credentials
         from google.auth.transport.requests import Request
         
         credentials = None
+        
+        # On Render, we store the token as a base64-encoded env var
+        token_env = os.getenv("YOUTUBE_TOKEN_JSON")
+        if token_env and not os.path.exists(token_path):
+            log_progress(progress_callback, "log", message="Loading YouTube token from environment variable...")
+            try:
+                token_json = base64.b64decode(token_env).decode("utf-8")
+                with open(token_path, 'w') as f:
+                    f.write(token_json)
+                log_progress(progress_callback, "log", message="Token restored from env var.")
+            except Exception as e:
+                log_progress(progress_callback, "log", message=f"Failed to decode YOUTUBE_TOKEN_JSON: {e}")
+
         if os.path.exists(token_path):
             credentials = Credentials.from_authorized_user_file(token_path, YOUTUBE_SCOPES)
             
         if not credentials or not credentials.valid:
             if credentials and credentials.expired and credentials.refresh_token:
                 credentials.refresh(Request())
+                # Save refreshed credentials back to file
+                with open(token_path, 'w') as token:
+                    token.write(credentials.to_json())
             else:
-                log_progress(progress_callback, "log", message="YouTube auth required. Please run 'python auth_yt.py' first!")
+                log_progress(progress_callback, "log", message="YouTube auth required. Please run 'python auth_yt.py' and set YOUTUBE_TOKEN_JSON env var!")
                 return None
-            # Save refreshed credentials
-            with open(token_path, 'w') as token:
-                token.write(credentials.to_json())
                 
         youtube = build("youtube", "v3", credentials=credentials)
         
