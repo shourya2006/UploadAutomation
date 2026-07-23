@@ -148,6 +148,18 @@ def upload_to_youtube(video_path: str, title: str, description: str, tags: list,
     client_secrets_path = os.path.join(_dir, "client_secrets.json")
     token_path = os.path.join(_dir, "token.json")
     
+    # Restore client_secrets.json from env var if running on Render
+    secrets_env = os.getenv("YOUTUBE_CLIENT_SECRETS_JSON")
+    if secrets_env and not os.path.exists(client_secrets_path):
+        try:
+            import base64
+            secrets_json = base64.b64decode(secrets_env).decode("utf-8")
+            with open(client_secrets_path, 'w') as f:
+                f.write(secrets_json)
+            log_progress(progress_callback, "log", message="Restored client_secrets.json from env var.")
+        except Exception as e:
+            log_progress(progress_callback, "log", message=f"Failed to decode YOUTUBE_CLIENT_SECRETS_JSON: {e}")
+
     if not os.path.exists(client_secrets_path):
         log_progress(progress_callback, "log", message="Warning: client_secrets.json not found. Skipping YouTube upload.")
         return None
