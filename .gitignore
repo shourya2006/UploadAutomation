@@ -1,0 +1,31 @@
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Mac OS
+.DS_Store
+
+# Credentials and sensitive files
+token.json
+client_secrets.json
+
+# Logs and databases
+*.log
+*.sqlite3
+
+# Uploads and temporary media
+static/uploads/
+*.mp4
+*.jpg
+*.png
+*.jpeg

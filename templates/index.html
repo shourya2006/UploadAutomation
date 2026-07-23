@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Social Video Uploader</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .metadata-preview {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .thumbnail-preview img {
+            max-width: 100%;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+        .log-box {
+            font-family: monospace;
+            background: #111;
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 1rem;
+            max-height: 200px;
+            overflow-y: auto;
+            color: #0f0;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+
+    <div class="container glass-panel">
+        <header>
+            <h1>Social Video Uploader</h1>
+            <p>Upload your video and push it to YouTube, Facebook, and Instagram.</p>
+        </header>
+
+        <main>
+            <!-- Step 1: Input -->
+            <section id="step-input" class="active-step">
+                <form id="upload-form" enctype="multipart/form-data">
+                    <div class="input-group">
+                        <label for="video-file">Select Video File (.mp4)</label>
+                        <input type="file" id="video-file" name="video" accept="video/mp4" required>
+                    </div>
+                    
+                    <div class="input-group">
+                        <label for="prompt">Description / Post Text</label>
+                        <textarea id="prompt" name="prompt" rows="4" placeholder="E.g., Check out my awesome new video! #AI #Shorts" required></textarea>
+                    </div>
+                    
+                    <button type="submit" id="generate-btn" class="primary-btn">
+                        <span>Upload & Publish</span>
+                        <div class="spinner hidden"></div>
+                    </button>
+                </form>
+                
+                <div id="publish-status" class="status-text hidden">Processing Upload...</div>
+                
+                <!-- Live Feedback Area -->
+                <div id="live-feedback" class="hidden">
+                    <div class="metadata-preview hidden" id="metadata-preview">
+                        <h3>AI Generated Metadata</h3>
+                        <p><strong>Title:</strong> <span id="gen-title"></span></p>
+                        <p><strong>Description:</strong> <span id="gen-desc"></span></p>
+                        <p><strong>Tags:</strong> <span id="gen-tags"></span></p>
+                    </div>
+                    
+                    <div class="thumbnail-preview hidden" id="thumbnail-preview">
+                        <h3>Nano Banana Thumbnail</h3>
+                        <img id="gen-thumbnail" src="" alt="Thumbnail Preview">
+                    </div>
+                    
+                    <div class="log-box" id="log-box"></div>
+                </div>
+            </section>
+
+            <!-- Step 3: Success -->
+            <section id="step-success" class="hidden">
+                <h2>🎉 Published Successfully!</h2>
+                <div class="success-links">
+                    <p>Your video is now live.</p>
+                    <a id="youtube-link" href="#" target="_blank" class="link-btn">View on YouTube</a>
+                </div>
+                <button id="start-over-btn" class="secondary-btn mt-4" onclick="location.reload()">Upload Another Video</button>
+            </section>
+        </main>
+    </div>
+
+    <script src="https://js.puter.com/v2/"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
